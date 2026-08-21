@@ -1,36 +1,199 @@
-// simple node web server that displays hello world
-// optimized for Docker image
-
 const express = require("express");
-// this example uses express web framework so we know what longer build times
-// do and how Dockerfile layer ordering matters. If you mess up Dockerfile ordering
-// you'll see long build times on every code change + build. If done correctly,
-// code changes should be only a few seconds to build locally due to build cache.
-
 const morgan = require("morgan");
-// morgan provides easy logging for express, and by default it logs to stdout
-// which is a best practice in Docker. Friends don't let friends code their apps to
-// do app logging to files in containers.
-
 const database = require("./database");
 
-// Appi
 const app = express();
 
 app.use(morgan("common"));
+app.use(express.json());
 
-app.get("/", function(req, res, next) {
-  database.raw('select VERSION() version')
-    .then(([rows, columns]) => rows[0])
-    .then((row) => res.json({ message: `Hello from MySQL ${row.version}` }))
-    .catch(next);
+/*
+ * Health check
+ */
+app.get("/healthz", function(req, res) {
+  res.status(200).send("I am happy and healthy\n");
 });
 
-app.get("/healthz", function(req, res) {
-  // do app logic here to determine if app is truly healthy
-  // you should return 200 if healthy, and anything else will fail
-  // if you want, you should be able to restrict this to localhost (include ipv4 and ipv6)
-  res.send("I am happy and healthy\n");
+/*
+ * Root endpoint
+ */
+app.get("/", async function(req, res, next) {
+  try {
+    const result = await database.raw("SELECT VERSION() AS version");
+
+    const rows = result[0];
+
+    res.json({
+      message: `Employee Management API`,
+      database: rows[0].version
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/*
+ * GET all employees
+ */
+app.get("/employees", async function(req, res, next) {
+  try {
+    const employees = await database("employees")
+      .select(
+        "id",
+        "name",
+        "email",
+        "department",
+        "designation",
+        "salary",
+        "created_at",
+        "updated_at"
+      )
+      .orderBy("id", "asc");
+
+    res.status(200).json(employees);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/*
+ * GET employee by ID
+ */
+app.get("/employees/:id", async function(req, res, next) {
+  try {
+    const employee = await database("employees")
+      .where({ id: req.params.id })
+      .first();
+
+    if (!employee) {
+      return res.status(404).json({
+        message: "Employee not found"
+      });
+    }
+
+    res.status(200).json(employee);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/*
+ * CREATE employee
+ */
+app.post("/employees", async function(req, res, next) {
+  try {
+    const {
+      name,
+      email,
+      department,
+      designation,
+      salary
+    } = req.body;
+
+    if (!name || !email || !department || !designation || salary === undefined) {
+      return res.status(400).json({
+        message: "name, email, department, designation and salary are required"
+      });
+    }
+
+    const [id] = await database("employees").insert({
+      name,
+      email,
+      department,
+      designation,
+      salary
+    });
+
+    const employee = await database("employees")
+      .where({ id })
+      .first();
+
+    res.status(201).json(employee);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/*
+ * UPDATE employee
+ */
+app.put("/employees/:id", async function(req, res, next) {
+  try {
+    const {
+      name,
+      email,
+      department,
+      designation,
+      salary
+    } = req.body;
+
+    const existingEmployee = await database("employees")
+      .where({ id: req.params.id })
+      .first();
+
+    if (!existingEmployee) {
+      return res.status(404).json({
+        message: "Employee not found"
+      });
+    }
+
+    await database("employees")
+      .where({ id: req.params.id })
+      .update({
+        name,
+        email,
+        department,
+        designation,
+        salary,
+        updated_at: database.fn.now()
+      });
+
+    const updatedEmployee = await database("employees")
+      .where({ id: req.params.id })
+      .first();
+
+    res.status(200).json(updatedEmployee);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/*
+ * DELETE employee
+ */
+app.delete("/employees/:id", async function(req, res, next) {
+  try {
+    const existingEmployee = await database("employees")
+      .where({ id: req.params.id })
+      .first();
+
+    if (!existingEmployee) {
+      return res.status(404).json({
+        message: "Employee not found"
+      });
+    }
+
+    await database("employees")
+      .where({ id: req.params.id })
+      .del();
+
+    res.status(200).json({
+      message: "Employee deleted successfully"
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/*
+ * Error handler
+ */
+app.use(function(error, req, res, next) {
+  console.error(error);
+
+  res.status(500).json({
+    message: "Internal server error"
+  });
 });
 
 module.exports = app;

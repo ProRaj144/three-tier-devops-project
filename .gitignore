@@ -1,1 +1,3 @@
 node_modules
+db/password.txt
+compose.yaml.backup
