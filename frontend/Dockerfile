@@ -37,3 +37,5 @@ CMD [ "npm", "start" ]
 FROM nginx:1.13-alpine
 
 COPY --from=builder /code/build /usr/share/nginx/html
+
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
