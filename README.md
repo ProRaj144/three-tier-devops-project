@@ -97,3 +97,9 @@ Removing react-express-mysql_db_1       ... done
 Removing network react-express-mysql_default
 
 ```
+
+
+
+
+
+project ways
